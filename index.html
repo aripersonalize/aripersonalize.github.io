@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>คิว Personalize — Ari</title>
+<style>
+:root{--bg:#0f1216;--card:#161b22;--line:#2b3440;--ink:#eef2f6;--muted:#93a1b0;--brand:#1f6feb;--gold:#ffd166;--ok:#2ea043;--bad:#ff7b72}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,"Segoe UI","Noto Sans Thai",Tahoma,sans-serif;padding:18px 14px 40px}
+.wrap{max-width:440px;margin:0 auto}
+.brand{text-align:center;color:var(--muted);font-size:13px;letter-spacing:.5px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;margin-top:12px}
+.q{text-align:center;font-size:64px;font-weight:900;color:var(--gold);line-height:1.05}
+.lbl{text-align:center;color:var(--muted);font-size:13px}
+.st{display:block;text-align:center;font-size:20px;font-weight:800;margin:6px 0 2px}
+.wait{text-align:center;font-size:15px}
+.steps{display:flex;justify-content:space-between;margin:16px 0 4px;position:relative}
+.steps:before{content:"";position:absolute;left:12%;right:12%;top:13px;height:3px;background:var(--line)}
+.steps div{flex:1;text-align:center;font-size:12px;color:var(--muted);position:relative}
+.steps i{display:block;width:28px;height:28px;margin:0 auto 4px;border-radius:50%;background:#222a34;border:3px solid var(--line);font-style:normal;line-height:22px;font-size:13px}
+.steps div.on{color:var(--ink);font-weight:700}
+.steps div.on i{background:var(--brand);border-color:var(--brand)}
+.steps div.ok i{background:var(--ok);border-color:var(--ok)}
+.it{font-size:14px;color:#cfd8e2;margin-top:4px}
+.print{text-align:center;margin:10px 0 4px}
+.print .n{font-size:24px;font-weight:800;letter-spacing:2px}
+.print .no{font-size:42px;font-weight:900;color:var(--gold);line-height:1}
+.muted{color:var(--muted);font-size:13px}
+.done{text-align:center;border-color:var(--ok)}
+.done h2{margin:6px 0;font-size:22px}
+.err{color:var(--bad);font-size:14px;margin-top:8px;text-align:center}
+input{width:100%;background:#0c1015;color:var(--ink);border:1.5px solid var(--line);border-radius:10px;padding:12px;font:inherit;margin-top:6px}
+button{width:100%;margin-top:12px;padding:13px;border:0;border-radius:10px;background:var(--brand);color:#fff;font:inherit;font-weight:800;cursor:pointer}
+button:disabled{opacity:.6}
+a{color:#7fb6ee}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">ARI · PERSONALIZE</div>
+  <div id="app"><div class="card"><div class="lbl">กำลังโหลด…</div></div></div>
+  <div class="muted" style="text-align:center;margin-top:14px" id="foot">หน้านี้อัปเดตเองทุก 30 วินาที · เปิดค้างไว้ได้ เสื้อเสร็จแล้วจะมีเสียงเตือน</div>
+</div>
+<script>
+/* หน้าดูคิว Personalize สำหรับลูกค้า (วางนอก script.google.com)
+   ลูกค้าเปิดได้ทุกเครื่อง ไม่ขึ้นกับบัญชี Google ที่ล็อกอินอยู่ในมือถือ
+   ข้อมูลคิวดึงจากระบบร้าน (Apps Script) แบบไม่ส่งคุกกี้/บัญชีของผู้เปิด */
+var EXEC = 'https://script.google.com/macros/s/AKfycbyY9Z4im81NdcEudj7psnwzKoeBLwEY8WqVZJ-ekfuX6DlxBPhoMjnydOA9CjG78lhtyA/exec';
+var TOKEN = (function () {
+  var m = /[?&#]t=([A-Za-z0-9]+)/.exec(location.search + location.hash);
+  return m ? m[1].slice(0, 40) : '';
+})();
+var V = null, EDIT = false, BUSY = false, WAS = '', AC = null, FAILS = 0;
+
+function $(id) { return document.getElementById(id); }
+function e(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+function getJson(url, opt) {
+  opt = opt || {};
+  opt.credentials = 'omit';          // สำคัญ: ไม่ส่งบัญชี Google ของผู้เปิด → ไม่โดนหน้า "ไม่สามารถเปิดไฟล์ได้"
+  opt.cache = 'no-store';
+  opt.redirect = 'follow';
+  return fetch(url, opt).then(function (r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  });
+}
+function load() {
+  if (!TOKEN) { V = { ok: false, msg: 'ไม่พบเลขคิว — สแกน QR จากบัตรคิวอีกครั้ง' }; paint(); return; }
+  getJson(EXEC + '?screen=pqj&t=' + encodeURIComponent(TOKEN))
+    .then(function (v) { FAILS = 0; V = v; paint(); })
+    .catch(function () {
+      FAILS++;
+      if (!V) { V = { ok: false, msg: 'เชื่อมต่อไม่ได้ — กำลังลองใหม่…' }; paint(); }
+      setTimeout(load, Math.min(30000, 5000 * FAILS));
+    });
+}
+function unlockSound() {
+  try {
+    if (!AC) { var A = window.AudioContext || window.webkitAudioContext; if (A) AC = new A(); }
+    if (AC && AC.state === 'suspended') AC.resume();
+  } catch (x) {}
+}
+function ding() {
+  try {
+    unlockSound();
+    if (AC) {
+      var t = AC.currentTime;
+      [880, 1175, 1568].forEach(function (f, i) {
+        var o = AC.createOscillator(), g = AC.createGain();
+        o.frequency.value = f; o.connect(g); g.connect(AC.destination);
+        g.gain.setValueAtTime(0.0001, t + i * 0.22);
+        g.gain.exponentialRampToValueAtTime(0.4, t + i * 0.22 + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.22 + 0.2);
+        o.start(t + i * 0.22); o.stop(t + i * 0.22 + 0.21);
+      });
+    }
+  } catch (x) {}
+  try { if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 500]); } catch (x) {}
+}
+function paint() {
+  var v = V;
+  if (!v || !v.ok) {
+    $('app').innerHTML = '<div class="card"><div class="err">' + e((v && v.msg) || 'โหลดไม่สำเร็จ') + '</div></div>';
+    return;
+  }
+  if (WAS && WAS !== 'เสร็จ รอรับ' && v.status === 'เสร็จ รอรับ') ding();
+  WAS = v.status;
+  var stepIdx = { 'รอคิว': 0, 'กำลังทำ': 1, 'เสร็จ รอรับ': 2, 'ส่งมอบแล้ว': 3 }[v.status];
+  var h = '';
+  if (v.status === 'เสร็จ รอรับ') {
+    h += '<div class="card done"><div style="font-size:44px">✅</div><h2>เสื้อของคุณเสร็จแล้ว!</h2>' +
+      '<div>รับได้ที่ ' + e(v.branchName) + ' · แจ้งคิว <b>' + e(v.q) + '</b></div></div>';
+  }
+  h += '<div class="card"><div class="lbl">คิวของคุณ</div><div class="q">' + e(v.q || '-') + '</div>' +
+    '<span class="st">' + e(v.status === 'กำลังทำ' ? 'กำลังสกรีนเสื้อของคุณ' : v.status) + '</span>';
+  if (v.status === 'รอคิว') {
+    h += '<div class="wait">' + (v.ahead > 0 ? 'รออีก <b>' + e(v.ahead) + '</b> คิว · ' : 'คิวถัดไปคือคุณ · ') +
+      'ประมาณ <b>' + e(v.eta || '-') + '</b> นาที</div>';
+  } else if (v.status === 'กำลังทำ') {
+    h += '<div class="wait">อีกประมาณ <b>' + e(v.eta || '-') + '</b> นาที</div>';
+  } else if (v.status === 'รอชำระ') {
+    h += '<div class="wait">ชำระเงินที่ Cashier แล้วจะได้เลขคิว</div>';
+  } else if (v.status === 'ยกเลิก') {
+    h += '<div class="wait">คิวนี้ถูกยกเลิก กรุณาติดต่อพนักงาน</div>';
+  }
+  if (stepIdx != null) {
+    h += '<div class="steps">' + ['รอคิว', 'กำลังทำ', 'เสร็จ รอรับ', 'รับแล้ว'].map(function (s, i) {
+      return '<div class="' + (i < stepIdx ? 'ok' : i === stepIdx ? 'on' : '') + '"><i>' + (i < stepIdx ? '✓' : (i + 1)) + '</i>' + s + '</div>';
+    }).join('') + '</div>';
+  }
+  if (v.shirt || v.no) {
+    h += '<div class="print"><div class="n">' + e(v.shirt) + '</div><div class="no">' + e(v.no) + '</div></div>';
+  }
+  if (v.name) h += '<div class="it" style="text-align:center">' + e(v.name) + (v.size ? ' · ไซส์ ' + e(v.size) : '') + '</div>';
+  if (v.patches) h += '<div class="it" style="text-align:center">อาร์ม: ' + e(v.patches) + '</div>';
+  h += '<div class="muted" style="text-align:center;margin-top:6px">' + e(v.branchName) + ' · สั่งเมื่อ ' + e(v.time) + '</div></div>';
+
+  if (v.status !== 'ส่งมอบแล้ว' && v.status !== 'ยกเลิก') {
+    if (!v.hasCust || EDIT) {
+      h += '<div class="card"><b>กรอกชื่อและเบอร์โทร</b><div class="muted">ร้านใช้ติดต่อเมื่อเสื้อเสร็จ (ไม่บังคับ)</div>' +
+        '<input id="nm" maxlength="40" placeholder="ชื่อ" value="' + e(EDIT ? v.cust : '') + '" autocomplete="name">' +
+        '<input id="ph" maxlength="12" inputmode="tel" placeholder="เบอร์โทร เช่น 0812345678" autocomplete="tel">' +
+        '<button id="go" onclick="save()">บันทึก</button><div class="err" id="err"></div></div>';
+    } else {
+      h += '<div class="card"><div class="muted">ข้อมูลติดต่อ</div><div>' + e(v.cust) + ' · ' + e(v.phone) +
+        ' <a href="#" style="font-size:13px" onclick="EDIT=true;paint();return false">แก้ไข</a></div></div>';
+    }
+  }
+  if (v.status === 'ส่งมอบแล้ว' || v.status === 'ยกเลิก') $('foot').textContent = 'ขอบคุณที่ใช้บริการ Ari';
+
+  var keepNm = $('nm') ? $('nm').value : null, keepPh = $('ph') ? $('ph').value : null;
+  $('app').innerHTML = h;
+  if (keepNm !== null && $('nm')) $('nm').value = keepNm;
+  if (keepPh !== null && $('ph')) $('ph').value = keepPh;
+}
+function save() {
+  if (BUSY) return;
+  unlockSound();
+  var n = $('nm').value.trim(), p = $('ph').value.trim();
+  if (!n) { $('err').textContent = 'กรอกชื่อก่อนนะคะ'; return; }
+  if (!/^0[0-9]{8,9}$/.test(p.replace(/[^0-9]/g, ''))) { $('err').textContent = 'เบอร์โทรไม่ถูกต้อง'; return; }
+  BUSY = true; $('go').disabled = true; $('go').textContent = 'กำลังบันทึก…';
+  // ส่งแบบ text/plain = ไม่ต้องขออนุญาตข้ามโดเมนก่อน (preflight) · ชื่อ/เบอร์อยู่ในเนื้อคำขอ ไม่อยู่ในลิงก์
+  getJson(EXEC, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ a: 'reg', t: TOKEN, n: n, p: p }) })
+    .then(function (v) {
+      BUSY = false;
+      if (!v || !v.ok) { $('go').disabled = false; $('go').textContent = 'บันทึก'; $('err').textContent = (v && v.msg) || 'บันทึกไม่สำเร็จ'; return; }
+      EDIT = false; V = v; paint();
+    })
+    .catch(function () {
+      BUSY = false; $('go').disabled = false; $('go').textContent = 'บันทึก'; $('err').textContent = 'บันทึกไม่สำเร็จ ลองใหม่';
+    });
+}
+document.addEventListener('click', unlockSound, { once: true });
+document.addEventListener('touchstart', unlockSound, { once: true, passive: true });
+document.addEventListener('visibilitychange', function () { if (!document.hidden && !EDIT && !BUSY) load(); });
+setInterval(function () {
+  if (!document.hidden && !EDIT && !BUSY && !(document.activeElement && /INPUT/.test(document.activeElement.tagName))) load();
+}, 30000);
+load();
+</script>
+</body>
+</html>
