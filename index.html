@@ -36,11 +36,13 @@ input{width:100%;background:#0c1015;color:var(--ink);border:1.5px solid var(--li
 button{width:100%;margin-top:12px;padding:13px;border:0;border-radius:10px;background:var(--brand);color:#fff;font:inherit;font-weight:800;cursor:pointer}
 button:disabled{opacity:.6}
 a{color:#7fb6ee}
+.anim{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:16px;margin-top:12px;background:#000;border:1px solid var(--line)}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="brand">ARI · PERSONALIZE</div>
+  <img id="anim" class="anim" src="pz-wait.webp" alt="กำลังสกรีนชื่อและเบอร์ลงเสื้อ" style="display:none">
   <div id="app"><div class="card"><div class="lbl">กำลังโหลด…</div></div></div>
   <div class="muted" style="text-align:center;margin-top:14px" id="foot">หน้านี้อัปเดตเองทุก 30 วินาที · เปิดค้างไว้ได้ เสื้อเสร็จแล้วจะมีเสียงเตือน</div>
 </div>
@@ -112,6 +114,8 @@ function paint() {
   }
   if (WAS && WAS !== 'เสร็จ รอรับ' && v.status === 'เสร็จ รอรับ') ding();
   WAS = v.status;
+  // ภาพเคลื่อนไหวสกรีนเสื้อ: โชว์ระหว่างรอ (อยู่นอก #app จึงไม่เริ่มใหม่ทุกครั้งที่หน้ารีเฟรชข้อมูล)
+  $('anim').style.display = (v.status === 'รอชำระ' || v.status === 'รอคิว' || v.status === 'กำลังทำ') ? 'block' : 'none';
   var stepIdx = { 'รอคิว': 0, 'กำลังทำ': 1, 'เสร็จ รอรับ': 2, 'ส่งมอบแล้ว': 3 }[v.status];
   var h = '';
   if (v.status === 'เสร็จ รอรับ') {
