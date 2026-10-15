@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>สแกนบาร์โค้ด</title>
+<style>
+  :root{--ok:#16a34a;--bad:#dc2626;--ink:#111827;--mut:#6b7280;--bg:#000}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:var(--bg);color:#fff;
+    font:15px/1.45 -apple-system,'Segoe UI','Noto Sans Thai',Tahoma,sans-serif;overflow:hidden}
+  #cam{position:fixed;left:0;right:0;top:0;border:0!important}
+  #top{position:fixed;left:0;right:0;top:0;z-index:5;display:flex;gap:8px;align-items:center;
+    padding:calc(env(safe-area-inset-top) + 10px) 12px 10px;background:linear-gradient(#000c,#0000)}
+  #top .t{flex:1;font-weight:700;font-size:16px}
+  .b{border:0;border-radius:999px;padding:10px 16px;font:inherit;font-weight:700;background:#ffffffe6;color:var(--ink);cursor:pointer}
+  .b.sm{padding:8px 12px;font-size:14px}
+  .b.on{background:#fde047}
+  .b.ok{background:var(--ok);color:#fff}
+  .b[hidden]{display:none}
+  #hint{position:fixed;left:0;right:0;top:calc(env(safe-area-inset-top) + 64px);z-index:4;text-align:center;
+    font-size:13px;color:#e5e7eb;text-shadow:0 1px 2px #000}
+  #flash{position:fixed;inset:0;z-index:3;pointer-events:none;border:0 solid var(--ok);transition:border-width .12s}
+  #flash.hit{border-width:14px}
+  #flash.dup{border-color:#f59e0b;border-width:14px}
+  #last{position:fixed;left:50%;top:42%;transform:translate(-50%,-50%);z-index:6;pointer-events:none;
+    background:#000b;border-radius:14px;padding:10px 18px;font-size:20px;font-weight:800;opacity:0;transition:opacity .15s}
+  #last.show{opacity:1}
+  #sheet{position:fixed;left:0;right:0;bottom:0;z-index:5;background:#fff;color:var(--ink);
+    border-radius:18px 18px 0 0;padding:12px 14px calc(env(safe-area-inset-bottom) + 12px);max-height:40vh;display:flex;flex-direction:column}
+  #sheet .h{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  #sheet .h .n{flex:1;font-weight:800;font-size:17px}
+  #list{overflow:auto;flex:1;min-height:0}
+  .row{display:flex;align-items:center;gap:8px;padding:7px 2px;border-bottom:1px solid #eee;font-variant-numeric:tabular-nums}
+  .row .c{flex:1;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;word-break:break-all}
+  .row .q{font-weight:800;min-width:34px;text-align:right}
+  .row button{border:0;border-radius:9px;width:34px;height:34px;font-size:20px;font-weight:800;background:#f3f4f6;color:var(--ink)}
+  .row.new{animation:nw .6s}
+  @keyframes nw{from{background:#dcfce7}to{background:#fff}}
+  .empty{color:var(--mut);padding:8px 2px}
+  #done{width:100%;margin-top:10px;padding:14px;border-radius:12px;font-size:17px}
+  #panel{position:fixed;inset:0;z-index:9;display:none;align-items:center;justify-content:center;padding:18px;background:#000d}
+  #panel .box{background:#fff;color:var(--ink);border-radius:16px;padding:20px;max-width:420px;width:100%}
+  #panel .msg{white-space:pre-wrap;margin-bottom:14px}
+  #panel .b{width:100%;margin-top:8px;border-radius:12px;padding:13px;background:#1f3864;color:#fff}
+  #panel .b.alt{background:#e5e7eb;color:var(--ink)}
+  #file{display:none}
+  #tmp{display:none}
+</style>
+</head>
+<body>
+<div id="cam"></div>
+<div id="flash"></div>
+<div id="last"></div>
+
+<div id="top">
+  <button class="b sm" id="bClose">✕ ปิด</button>
+  <div class="t" id="title">สแกนบาร์โค้ด</div>
+  <button class="b sm" id="bZoom" hidden>🔍 1x</button>
+  <button class="b sm" id="bTorch" hidden>🔦</button>
+</div>
+<div id="hint">เล็งบาร์โค้ดให้อยู่ในกรอบ · ถือห่างประมาณ 1 ฝ่ามือ</div>
+
+<div id="sheet" hidden>
+  <div class="h"><div class="n" id="cnt">ยังไม่ได้สแกน</div><button class="b sm" id="bClear" hidden>ล้าง</button></div>
+  <div id="list"><div class="empty">ยิงทีละชิ้นได้เรื่อยๆ · ชิ้นเดิมซ้ำ = เอาออกจากกล้องแล้วเล็งใหม่</div></div>
+  <button class="b ok" id="done">✓ เสร็จ</button>
+</div>
+
+<div id="panel"><div class="box"><div class="msg" id="pMsg"></div><div id="pBtns"></div></div></div>
+<input type="file" id="file" accept="image/*" capture="environment">
+<div id="tmp"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script>
+/* หน้าสแกนบาร์โค้ดของ Store System
+   ทำไมต้องเปิดเป็นแท็บแยก: หน้าเว็บ Apps Script ถูกฝังใน iframe ที่ Google ไม่ใส่ allow="camera"
+   กล้องสดจึงใช้ในหน้าระบบไม่ได้ (ได้แค่ถ่ายรูปทีละรูป) หน้านี้เปิดกล้องสดได้เต็มที่
+   แล้วส่งผลกลับไปหน้าเดิมด้วย postMessage (ไม่ส่งข้อมูลไปที่อื่นเลย)
+   ?m=1 สแกนชิ้นเดียวแล้วปิดเอง · ?m=n สแกนต่อเนื่องหลายชิ้นแล้วกด "เสร็จ"
+   ?s=รหัสรอบ · ?o=ต้นทางหน้าระบบ (ต้องเป็น *.googleusercontent.com) */
+(function () {
+  var P = new URLSearchParams(location.search);
+  var MULTI = P.get('m') === 'n';
+  var SID = P.get('s') || '';
+  var ORIGIN = P.get('o') || '';
+  if (!/^https:\/\/[a-z0-9.-]+\.googleusercontent\.com$/.test(ORIGIN)) ORIGIN = '';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var items = [], byCode = {};      // ลำดับตามที่สแกนครั้งแรก
+  var lastCode = '', lastSeen = 0, sent = false;
+  var cam = null, track = null, zoomCap = null, zoomOn = false, torchOn = false;
+  var HOLD_MS = 1200;               // บาร์โค้ดเดิมต้องหายจากกล้องเกินนี้ก่อน ถึงนับชิ้นใหม่
+
+  $('title').textContent = MULTI ? 'สแกนหลายชิ้น' : 'สแกนบาร์โค้ด';
+  if (MULTI) $('sheet').hidden = false;
+
+  /* ---------- ส่งผลกลับหน้าเดิม ---------- */
+  function post(msg) {
+    msg.app = 'ariscan'; msg.s = SID;
+    try {
+      if (window.opener && !window.opener.closed && ORIGIN) { window.opener.postMessage(msg, ORIGIN); return true; }
+    } catch (e) {}
+    return false;
+  }
+  function closeMe(note) {
+    stopCam();
+    try { window.close(); } catch (e) {}
+    setTimeout(function () { panel(note || 'เรียบร้อย — ปิดแท็บนี้แล้วกลับไปหน้าเดิมได้เลย', []); }, 400);
+  }
+
+  /* ---------- เสียง/สั่น/ไฟเขียว ---------- */
+  var AC = null;
+  function audio() {
+    try { if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)(); if (AC.state === 'suspended') AC.resume(); } catch (e) {}
+  }
+  document.addEventListener('pointerdown', audio, { passive: true });
+  function beep(ok) {
+    try {
+      audio(); if (!AC) return;
+      var o = AC.createOscillator(), g = AC.createGain();
+      o.type = 'square'; o.frequency.value = ok ? 1750 : 420;
+      g.gain.value = 0.08; o.connect(g); g.connect(AC.destination);
+      o.start(); o.stop(AC.currentTime + (ok ? 0.09 : 0.18));
+    } catch (e) {}
+    try { if (navigator.vibrate) navigator.vibrate(ok ? 60 : [40, 60, 40]); } catch (e) {}
+  }
+  function flash(cls, text) {
+    var f = $('flash'); f.className = cls; setTimeout(function () { f.className = ''; }, 220);
+    var l = $('last'); l.textContent = text; l.className = 'show';
+    clearTimeout(flash._t); flash._t = setTimeout(function () { l.className = ''; }, 900);
+  }
+
+  /* ---------- รายการ (โหมดหลายชิ้น) ---------- */
+  function total() { var n = 0; items.forEach(function (it) { n += it.q; }); return n; }
+  function paint(hot) {
+    var n = total();
+    $('cnt').textContent = n ? ('สแกนแล้ว ' + n + ' ชิ้น' + (items.length > 1 ? ' (' + items.length + ' รายการ)' : '')) : 'ยังไม่ได้สแกน';
+    $('done').textContent = n ? ('✓ เสร็จ ส่ง ' + n + ' ชิ้น') : '✓ เสร็จ';
+    $('bClear').hidden = !n;
+    var L = $('list');
+    if (!items.length) { L.innerHTML = '<div class="empty">ยิงทีละชิ้นได้เรื่อยๆ · ชิ้นเดิมซ้ำ = เอาออกจากกล้องแล้วเล็งใหม่</div>'; return; }
+    L.innerHTML = '';
+    items.slice().reverse().forEach(function (it) {
+      var r = document.createElement('div'); r.className = 'row' + (it.c === hot ? ' new' : '');
+      var c = document.createElement('div'); c.className = 'c'; c.textContent = it.c;
+      var q = document.createElement('div'); q.className = 'q'; q.textContent = '×' + it.q;
+      var m = document.createElement('button'); m.textContent = '−';
+      m.onclick = function () { it.q--; if (it.q <= 0) { items.splice(items.indexOf(it), 1); delete byCode[it.c]; } paint(); };
+      var p = document.createElement('button'); p.textContent = '+';
+      p.onclick = function () { it.q++; paint(); };
+      r.appendChild(c); r.appendChild(q); r.appendChild(m); r.appendChild(p); L.appendChild(r);
+    });
+  }
+  function sendBatch() {
+    if (sent) return;
+    var out = [];
+    items.forEach(function (it) { for (var i = 0; i < it.q; i++) out.push(it.c); });
+    if (!out.length) { post({ t: 'cancel' }); sent = true; closeMe(); return; }
+    if (post({ t: 'batch', items: out })) { sent = true; closeMe('ส่ง ' + out.length + ' ชิ้นกลับไปแล้ว — ปิดแท็บนี้ได้เลย'); return; }
+    panel('ส่งกลับหน้าเดิมไม่ได้ (หน้าเดิมถูกปิดหรือรีโหลดไปแล้ว)\n\nรายการที่สแกน:\n' +
+      items.map(function (it) { return it.c + ' ×' + it.q; }).join('\n') +
+      '\n\nเปิดหน้าระบบใหม่ แล้วกดสแกนจากหน้านั้นอีกครั้ง', [['ปิด', function () { closePanel(); }]]);
+  }
+  $('done').onclick = sendBatch;
+  $('bClear').onclick = function () {
+    if (!confirmTwice(this, 'ล้างจริง?')) return;
+    items = []; byCode = {}; paint();
+  };
+  function confirmTwice(btn, txt) {
+    if (btn._arm) { btn._arm = false; btn.textContent = btn._orig; return true; }
+    btn._orig = btn.textContent; btn._arm = true; btn.textContent = txt;
+    setTimeout(function () { if (btn._arm) { btn._arm = false; btn.textContent = btn._orig; } }, 2500);
+    return false;
+  }
+  $('bClose').onclick = function () {
+    if (MULTI && total() && !confirmTwice(this, 'ทิ้งรายการ?')) return;
+    post({ t: 'cancel' }); sent = true; closeMe();
+  };
+
+  /* ---------- ได้บาร์โค้ด ---------- */
+  function onCode(txt) {
+    var code = String(txt || '').trim(); if (!code) return;
+    var now = Date.now();
+    if (code === lastCode && now - lastSeen < HOLD_MS) { lastSeen = now; return; }   // ยังค้างอยู่ในกล้อง
+    lastCode = code; lastSeen = now;
+    if (!MULTI) {
+      if (sent) return;
+      beep(true); flash('hit', '✓ ' + code);
+      if (post({ t: 'scan', code: code })) { sent = true; setTimeout(function () { closeMe('ส่ง ' + code + ' กลับไปแล้ว'); }, 350); }
+      else panel('ส่งกลับหน้าเดิมไม่ได้ (หน้าเดิมถูกปิดหรือรีโหลดไปแล้ว)\n\nบาร์โค้ด: ' + code, [['ปิด', closePanel]]);
+      return;
+    }
+    var it = byCode[code];
+    if (it) it.q++; else { it = byCode[code] = { c: code, q: 1 }; items.push(it); }
+    beep(true); flash('hit', '+1 · ' + code + (it.q > 1 ? ' (×' + it.q + ')' : ''));
+    paint(code);
+  }
+
+  /* ---------- กล้องสด ---------- */
+  function formats() {
+    var F = window.Html5QrcodeSupportedFormats; if (!F) return undefined;
+    return [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E, F.CODE_128, F.CODE_39, F.ITF, F.QR_CODE];
+  }
+  function startCam() {
+    if (typeof Html5Qrcode === 'undefined') { failCam('โหลดตัวอ่านบาร์โค้ดไม่สำเร็จ (เช็คอินเทอร์เน็ต)'); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { failCam('เบราว์เซอร์นี้เปิดกล้องสดไม่ได้'); return; }
+    cam = new Html5Qrcode('cam', {
+      formatsToSupport: formats(), verbose: false,
+      useBarCodeDetectorIfSupported: true,
+      experimentalFeatures: { useBarCodeDetectorIfSupported: true }
+    });
+    var cfg = {
+      fps: 15,
+      disableFlip: true,
+      // กรอบกว้างแนวนอน เหมาะกับบาร์โค้ด 1 มิติ (อ่านเฉพาะในกรอบ = เร็วขึ้น)
+      qrbox: function (w, h) {
+        var bw = Math.floor(w * 0.86), bh = Math.floor(Math.min(h * 0.42, bw * 0.55));
+        return { width: Math.max(bw, 120), height: Math.max(bh, 80) };
+      },
+      videoConstraints: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1280 }, height: { ideal: 720 }
+      }
+    };
+    cam.start({ facingMode: 'environment' }, cfg, onCode, function () {})
+      .then(afterStart)
+      .catch(function (e) {
+        var n = (e && (e.name || e.message || e)) + '';
+        failCam(/NotAllowed|Permission/i.test(n)
+          ? 'ยังไม่ได้อนุญาตให้ใช้กล้อง\n\nกด "อนุญาต" เมื่อเบราว์เซอร์ถาม หรือเปิดสิทธิ์กล้องให้เว็บนี้ในการตั้งค่าเบราว์เซอร์ แล้วลองใหม่'
+          : 'เปิดกล้องสดไม่ได้ (' + n.slice(0, 80) + ')');
+      });
+  }
+  function afterStart() {
+    try {
+      var v = document.querySelector('#cam video');
+      track = v && v.srcObject && v.srcObject.getVideoTracks()[0];
+      var cap = track && track.getCapabilities ? track.getCapabilities() : {};
+      if (cap.focusMode && cap.focusMode.indexOf('continuous') >= 0) track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(function () {});
+      if (cap.torch) $('bTorch').hidden = false;
+      if (cap.zoom && cap.zoom.max >= 1.5) {
+        zoomCap = cap.zoom; $('bZoom').hidden = false;
+        // ซูมนิดหน่อยตั้งแต่ต้น: ถือมือถือห่างขึ้นได้ กล้องโฟกัสติดง่ายกว่าเอาไปจ่อใกล้ๆ
+        setZoom(true);
+      }
+    } catch (e) {}
+  }
+  function setZoom(on) {
+    if (!track || !zoomCap) return;
+    zoomOn = on;
+    var z = on ? Math.min(zoomCap.max, 2) : Math.max(zoomCap.min || 1, 1);
+    track.applyConstraints({ advanced: [{ zoom: z }] }).catch(function () {});
+    $('bZoom').textContent = '🔍 ' + (on ? (Math.round(z * 10) / 10) + 'x' : '1x');
+    $('bZoom').className = 'b sm' + (on ? ' on' : '');
+  }
+  $('bZoom').onclick = function () { setZoom(!zoomOn); };
+  $('bTorch').onclick = function () {
+    if (!track) return; torchOn = !torchOn;
+    track.applyConstraints({ advanced: [{ torch: torchOn }] }).catch(function () {});
+    this.className = 'b sm' + (torchOn ? ' on' : '');
+  };
+  function stopCam() {
+    try { if (cam && cam.isScanning) cam.stop().catch(function () {}); } catch (e) {}
+  }
+  window.addEventListener('pagehide', stopCam);
+
+  /* ---------- สำรอง: ถ่ายรูปแล้วอ่าน (ถ้ากล้องสดเปิดไม่ได้) ---------- */
+  function failCam(why) {
+    $('hint').textContent = '';
+    panel(why + '\n\nใช้วิธีถ่ายรูปบาร์โค้ดแทนได้', [
+      ['📷 ถ่ายรูปบาร์โค้ด', function () { $('file').value = ''; $('file').click(); }],
+      ['ลองเปิดกล้องอีกครั้ง', function () { closePanel(); startCam(); }, 'alt'],
+      [MULTI ? 'เสร็จ / กลับหน้าเดิม' : 'ยกเลิก', function () { closePanel(); MULTI ? sendBatch() : $('bClose').onclick(); }, 'alt']
+    ]);
+  }
+  $('file').addEventListener('change', function (e) {
+    var f = e.target.files && e.target.files[0]; if (!f) return;
+    panel('กำลังอ่านบาร์โค้ด…', []);
+    decodeFile(f).then(function (code) {
+      if (code) { closePanel(); lastCode = ''; onCode(code); if (MULTI) failCam('อ่านได้: ' + code); return; }
+      beep(false);
+      failCam('อ่านบาร์โค้ดจากรูปนี้ไม่ได้ — ถ่ายใกล้ขึ้น ให้แถบบาร์โค้ดกว้างเกินครึ่งจอ และไม่มีแสงสะท้อนพาด');
+    });
+  });
+  function nativeDetect(src) {
+    if (!('BarcodeDetector' in window)) return Promise.resolve(null);
+    var want = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'qr_code'];
+    return BarcodeDetector.getSupportedFormats().then(function (fs) {
+      var use = want.filter(function (f) { return fs.indexOf(f) >= 0; });
+      if (!use.length) return null;
+      return new BarcodeDetector({ formats: use }).detect(src).then(function (r) { return r && r.length ? String(r[0].rawValue) : null; });
+    }).catch(function () { return null; });
+  }
+  function decodeFile(file) {
+    return new Promise(function (resolve) {
+      var img = new Image(), url = URL.createObjectURL(file);
+      img.onerror = function () { resolve(null); };
+      img.onload = function () {
+        nativeDetect(img).then(function (r) {
+          if (r) { resolve(r); return; }
+          if (typeof Html5Qrcode === 'undefined') { resolve(null); return; }
+          // ZXing กวาดเป็นเส้น ภาพใหญ่เส้นจะห่าง → ครอปกลางภาพแล้วขยาย ลองหลายขนาด
+          var crops = [[0, 0, 1], [0.225, 0.225, 0.55], [0.31, 0.31, 0.38], [0.1, 0.3, 0.8]], i = 0;
+          (function next() {
+            if (i >= crops.length) { resolve(null); return; }
+            var c = crops[i++], sw = img.width * c[2], sh = img.height * (c[2] === 0.8 ? 0.4 : c[2]);
+            var sc = Math.min(1600 / sw, 1600 / sh, 4), cv = document.createElement('canvas');
+            cv.width = Math.round(sw * sc); cv.height = Math.round(sh * sc);
+            var g = cv.getContext('2d'); g.imageSmoothingQuality = 'high';
+            g.drawImage(img, img.width * c[0], img.height * c[1], sw, sh, 0, 0, cv.width, cv.height);
+            cv.toBlob(function (b) {
+              if (!b) { next(); return; }
+              new Html5Qrcode('tmp', { formatsToSupport: formats(), verbose: false })
+                .scanFile(new File([b], 'c.jpg', { type: 'image/jpeg' }), false)
+                .then(function (t) { resolve(String(t)); })
+                .catch(next);
+            }, 'image/jpeg', 0.95);
+          })();
+        });
+      };
+      img.src = url;
+    });
+  }
+
+  /* ---------- กล่องข้อความ ---------- */
+  function panel(msg, btns) {
+    $('pMsg').textContent = msg;
+    var B = $('pBtns'); B.innerHTML = '';
+    (btns || []).forEach(function (b) {
+      var x = document.createElement('button'); x.className = 'b' + (b[2] ? ' ' + b[2] : '');
+      x.textContent = b[0]; x.onclick = b[1]; B.appendChild(x);
+    });
+    $('panel').style.display = 'flex';
+  }
+  function closePanel() { $('panel').style.display = 'none'; }
+
+  if (!window.opener) $('hint').textContent = 'เปิดหน้านี้จากปุ่ม 📷 ในระบบ ผลถึงจะส่งกลับได้';
+  paint();
+  startCam();
+})();
+</script>
+</body>
+</html>
